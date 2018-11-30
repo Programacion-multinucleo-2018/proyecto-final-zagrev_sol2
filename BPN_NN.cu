@@ -173,7 +173,7 @@ int main(int argc, char *argv[])
 
    	double *h_z1;
     h_z1 = (double *)malloc(hidden_layer_size * training_size * sizeof(double));
-    SAFE_CALL(cudaMemcpy(h_z1, d_z1, hidden_layer_size * training_size, cudaMemcpyDeviceToHost), "CUDA Memcpy Host To Device Failed");
+    SAFE_CALL(cudaMemcpy(h_z1, d_z1, hidden_layer_size * training_size, cudaMemcpyDeviceToHost), "CUDA Memcpy Device To Host Failed");
 
     /*
     for (int i = 0; i <  hidden_layer_size * training_size; i++){
