@@ -44,29 +44,30 @@ __global__ void matrixMult(double *A, double *B, double *C, const int cols, cons
 
 int main(int argc, char *argv[])
 {
-	//
-	double sigma = 0.12;
-	int training_size = 1000; //5000 examples
-	int training_attr_size = 400; //400 pixels (20 x 20 pixels)
+	//Parameters
+	double sigma = 0.12; //weights range value
+	int training_size = 1; // Number of examples
+	int training_attr_size = 400; // number of features (400 values (20 x 20 pixels))
 	int hidden_layer_size = 25;
-	int output_layer_size = 10;
+	int output_layer_size = 10; //10 digits
 
-	//Z2 será la matrix resultado
+	// Z2 will be the Results matrix
 	double *h_values, *h_labels, *h_w1, *h_w2, *h_z2;
-	//double *h_z1;
-	//double *h_z2;
-	//double *h_b1;
-	//double *h_b2;
 
 	std::string filePath;
 	
-	if(argc < 2)
+	if(argc < 2){
 		filePath = "nueve.txt";
-		//imagePath = "image.jpg";
-  	else
-  		filePath = argv[1];
+		training_size = 1;
+	}
+  	else{
+  	  	filePath = argv[1];
+  	  	training_size = std::stoi(argv[2]);
+  	}
 
+  	std::cout << "\nFile used: " << filePath <<  "\nNumber of examples: " << training_size << std::endl;
 
+  	// FILE READER
     int counter = 0;
 	std::ifstream file(filePath);
 	std::string line;
@@ -84,6 +85,7 @@ int main(int argc, char *argv[])
 			counter++;
 	}
 
+	// TRANSFORM DATA TO DOUBLE
 	std::vector<double> values(values_s.size());
 	std::vector<double> labels(labels_s.size());
 
@@ -97,6 +99,7 @@ int main(int argc, char *argv[])
 	    return std::stoi(val);
 	});
 
+	// GENERATE WEIGHTS
 	std::random_device rand_dev;
     std::default_random_engine generator(rand_dev());
   	std::uniform_real_distribution<double> distribution(-sigma, sigma);
@@ -121,16 +124,14 @@ int main(int argc, char *argv[])
   	//std::fill (b1.begin(), b1.end(), 1);
   	//std::fill (b2.begin(), b2.end(), 1);
 
-  	//std::vector<double> z1(training_size * hidden_layer_ size);
-    std::vector<double> z2(training_size*2 * output_layer_size);
+  	//std::vector<double> z2(output_layer_size * training_size);
 
 
-   	h_values = (double *)malloc(values.size());
-	h_labels = (double *)malloc(labels.size());
-	h_w1 = (double *)malloc(w1.size());
-	h_w2 = (double *)malloc(w2.size());
-	//h_z1 = (double *)malloc(z1.size());
-	h_z2 = (double *)malloc(z2.size() * 2);
+   	h_values = (double *)malloc(values.size() * sizeof(double));
+	h_labels = (double *)malloc(labels.size() * sizeof(double));
+	h_w1 = (double *)malloc(w1.size() * sizeof(double));
+	h_w2 = (double *)malloc(w2.size() * sizeof(double));
+	h_z2 = (double *)calloc(output_layer_size * training_size, sizeof(double));
 	//h_b1 = (double *)malloc(b1.size());
 	//h_b2 = (double *)malloc(b2.size());
 
@@ -139,50 +140,66 @@ int main(int argc, char *argv[])
 	h_w1 = w1.data();
 	h_w2 = w2.data();
 	//h_z1 = z1.data();
-	h_z2 = z2.data();
+	//h_z2 = z2.data();
 	//h_b1 = b1.data();
 	//h_b2 = b2.data();
 
 	double *d_values, *d_labels, *d_w1, *d_w2, *d_z1, *d_z2, *d_b1, *d_b2;
-	SAFE_CALL(cudaMalloc((void **)&d_values, values.size()), "Error allocating d_values");
-    SAFE_CALL(cudaMalloc((void **)&d_labels, labels.size()), "Error allocating d_labels");
-    SAFE_CALL(cudaMalloc((void **)&d_w1, w1.size()), "Error allocating d_w1");
-    SAFE_CALL(cudaMalloc((void **)&d_w2, w2.size()), "Error allocating d_w2");
-    SAFE_CALL(cudaMalloc((void **)&d_z1, training_size * hidden_layer_size), "Error allocating d_z1");
-    SAFE_CALL(cudaMalloc((void **)&d_z2, z2.size()), "Error allocating d_z2");
-    SAFE_CALL(cudaMalloc((void **)&d_b1, training_attr_size), "Error allocating d_b1");
-    SAFE_CALL(cudaMalloc((void **)&d_b2, hidden_layer_size), "Error allocating d_b2");
+	SAFE_CALL(cudaMalloc((void **)&d_values, values.size() * sizeof(double)), "Error allocating d_values");
+    SAFE_CALL(cudaMalloc((void **)&d_labels, labels.size() * sizeof(double)), "Error allocating d_labels");
+    SAFE_CALL(cudaMalloc((void **)&d_w1, w1.size() * sizeof(double)), "Error allocating d_w1");
+    SAFE_CALL(cudaMalloc((void **)&d_w2, w2.size() * sizeof(double)), "Error allocating d_w2");
+    SAFE_CALL(cudaMalloc((void **)&d_z1, training_size * hidden_layer_size * sizeof(double)), "Error allocating d_z1");
+    SAFE_CALL(cudaMalloc((void **)&d_z2, output_layer_size * training_size * sizeof(double)), "Error allocating d_z2");
+    SAFE_CALL(cudaMalloc((void **)&d_b1, training_attr_size * sizeof(double)), "Error allocating d_b1");
+    SAFE_CALL(cudaMalloc((void **)&d_b2, hidden_layer_size * sizeof(double)), "Error allocating d_b2");
 
     // transfer data from host to device
-    SAFE_CALL(cudaMemcpy(d_values, h_values, values.size(), cudaMemcpyHostToDevice), "Error copying d_values");
-    SAFE_CALL(cudaMemcpy(d_labels, h_labels, labels.size(), cudaMemcpyHostToDevice), "Error copying d_labels");
-    SAFE_CALL(cudaMemcpy(d_w1, h_w1, w1.size(), cudaMemcpyHostToDevice), "Error copying d_w1");
-    SAFE_CALL(cudaMemcpy(d_w2, h_w2, w2.size(), cudaMemcpyHostToDevice), "Error copying d_w2");
-    SAFE_CALL(cudaMemcpy(d_z2, h_z2, z2.size(), cudaMemcpyHostToDevice), "Error copying d_z2");
+    SAFE_CALL(cudaMemcpy(d_values, h_values, values.size() * sizeof(double), cudaMemcpyHostToDevice), "Error copying d_values");
+    SAFE_CALL(cudaMemcpy(d_labels, h_labels, labels.size() * sizeof(double), cudaMemcpyHostToDevice), "Error copying d_labels");
+    SAFE_CALL(cudaMemcpy(d_w1, h_w1, w1.size() * sizeof(double), cudaMemcpyHostToDevice), "Error copying d_w1");
+    SAFE_CALL(cudaMemcpy(d_w2, h_w2, w2.size() * sizeof(double), cudaMemcpyHostToDevice), "Error copying d_w2");
+    SAFE_CALL(cudaMemcpy(d_z2, h_z2, output_layer_size * training_size * sizeof(double), cudaMemcpyHostToDevice), "Error copying d_z2");
 
     
-	// invoke kernel at host side
+	// INVOKE KERNEL
     int dimx = 32;
     int dimy = 32;
     dim3 block(dimx, dimy);
-    dim3 grid((training_size + block.x - 1) / block.x, (training_attr_size + block.y - 1) / block.y);
+    dim3 grid((training_attr_size + block.x - 1) / block.x, (training_size + block.y - 1) / block.y);
 
    	matrixMult<<<grid, block>>>(d_values, d_w1, d_z1, hidden_layer_size, training_size, training_attr_size);
-   	
+   	printf("multMatrix <<<(%d,%d), (%d,%d)>>>\n", grid.x, grid.y, block.x, block.y);
+
    	double *h_z1;
-    h_z1 = (double *)malloc(hidden_layer_size * training_size);
+    h_z1 = (double *)malloc(hidden_layer_size * training_size * sizeof(double));
     SAFE_CALL(cudaMemcpy(h_z1, d_z1, hidden_layer_size * training_size, cudaMemcpyDeviceToHost), "CUDA Memcpy Host To Device Failed");
 
+    /*
     for (int i = 0; i <  hidden_layer_size * training_size; i++){
     	if (i%25 == 0)
     		std::cout << std::endl;
 		std::cout << h_z1[i] << " ";
     }
     std::cout << std::endl << std::endl;
+    */
 
    	//matrixMult<<<grid, block>>>(d_w2, d_z1, d_z2, output_layer_size, training_size, hidden_layer_size);
 
    	//SAFE_CALL(cudaMemcpy(h_z2, d_z2, z2.size(), cudaMemcpyDeviceToHost), "CUDA Memcpy Device to host Failed");
+
+	return 0;	
+}
+
+
+
+
+
+
+
+
+
+
 
    	/*
 	std::cout << " ** W1 ** " << endl;
@@ -218,7 +235,3 @@ int main(int argc, char *argv[])
     }
     std::cout << std::endl << std::endl;
     */
-    
-
-	return 0;	
-}
