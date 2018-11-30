@@ -51,9 +51,6 @@ int main(int argc, char *argv[])
 	int hidden_layer_size = 25;
 	int output_layer_size = 10; //10 digits
 
-	// Z2 will be the Results matrix
-	double *h_values, *h_labels, *h_w1, *h_w2, *h_z2;
-
 	std::string filePath;
 	
 	if(argc < 2){
@@ -104,11 +101,11 @@ int main(int argc, char *argv[])
     std::default_random_engine generator(rand_dev());
   	std::uniform_real_distribution<double> distribution(-sigma, sigma);
 
-  	std::vector<double> w1(training_attr_size * hidden_layer_size);
+  	std::vector<double> w1(hidden_layer_size * training_attr_size);
   	std::vector<double> w2(output_layer_size * hidden_layer_size);
 
   	//Initialize W1
-  	for(int i = 0; i < training_attr_size * hidden_layer_size; i++)
+  	for(int i = 0; i < hidden_layer_size * training_attr_size; i++)
   		w1.push_back(distribution(generator));
 
   	//Initialize W2
@@ -126,7 +123,8 @@ int main(int argc, char *argv[])
 
   	//std::vector<double> z2(output_layer_size * training_size);
 
-
+	// Z2 will be the Results matrix
+	double *h_values, *h_labels, *h_w1, *h_w2, *h_z2;
    	h_values = (double *)malloc(values.size() * sizeof(double));
 	h_labels = (double *)malloc(labels.size() * sizeof(double));
 	h_w1 = (double *)malloc(w1.size() * sizeof(double));
@@ -149,7 +147,7 @@ int main(int argc, char *argv[])
     SAFE_CALL(cudaMalloc((void **)&d_labels, labels.size() * sizeof(double)), "Error allocating d_labels");
     SAFE_CALL(cudaMalloc((void **)&d_w1, w1.size() * sizeof(double)), "Error allocating d_w1");
     SAFE_CALL(cudaMalloc((void **)&d_w2, w2.size() * sizeof(double)), "Error allocating d_w2");
-    SAFE_CALL(cudaMalloc((void **)&d_z1, training_size * hidden_layer_size * sizeof(double)), "Error allocating d_z1");
+    SAFE_CALL(cudaMalloc((void **)&d_z1, hidden_layer_size * training_size * sizeof(double)), "Error allocating d_z1");
     SAFE_CALL(cudaMalloc((void **)&d_z2, output_layer_size * training_size * sizeof(double)), "Error allocating d_z2");
     SAFE_CALL(cudaMalloc((void **)&d_b1, training_attr_size * sizeof(double)), "Error allocating d_b1");
     SAFE_CALL(cudaMalloc((void **)&d_b2, hidden_layer_size * sizeof(double)), "Error allocating d_b2");
@@ -168,7 +166,7 @@ int main(int argc, char *argv[])
     dim3 block(dimx, dimy);
     dim3 grid((training_attr_size + block.x - 1) / block.x, (training_size + block.y - 1) / block.y);
 
-   	matrixMult<<<grid, block>>>(d_values, d_w1, d_z1, hidden_layer_size, training_size, training_attr_size);
+   	matrixMult<<<grid, block>>>(d_w1, d_values, d_z1, hidden_layer_size, training_size, training_attr_size);
    	printf("multMatrix <<<(%d,%d), (%d,%d)>>>\n", grid.x, grid.y, block.x, block.y);
 
    	double *h_z1;
