@@ -159,19 +159,39 @@ int main(int argc, char *argv[])
     SAFE_CALL(cudaMemcpy(d_w2, h_w2, w2.size() * sizeof(double), cudaMemcpyHostToDevice), "Error copying d_w2");
     SAFE_CALL(cudaMemcpy(d_z2, h_z2, output_layer_size * training_size * sizeof(double), cudaMemcpyHostToDevice), "Error copying d_z2");
 
-    
+	// show memory usage of GPU
+
+	size_t free_byte ;
+	size_t total_byte ;
+
+	cudaError cuda_status = cudaMemGetInfo( &free_byte, &total_byte ) ;
+
+	if ( cudaSuccess != cudaMemGetInfo( &free_byte, &total_byte ))
+	{
+		printf("Error: cudaMemGetInfo fails, %s \n", cudaGetErrorString(cuda_status) );
+		exit(1);
+	}
+
+	double free_db = (double)free_byte ;
+	double total_db = (double)total_byte ;
+	double used_db = total_db - free_db ;
+
+	printf("GPU memory usage: used = %f MB, free = %f MB, total = %f MB\n", used_db/1024.0/1024.0, free_db/1024.0/1024.0, total_db/1024.0/1024.0);
+
 	// INVOKE KERNEL
     int dimx = 32;
     int dimy = 32;
     dim3 block(dimx, dimy);
     dim3 grid((training_attr_size + block.x - 1) / block.x, (training_size + block.y - 1) / block.y);
 
-   	matrixMult<<<grid, block>>>(d_w1, d_values, d_z1, hidden_layer_size, training_size, training_attr_size);
+	matrixMult<<<grid, block>>>(d_w1, d_values, d_z1, hidden_layer_size, training_size, training_attr_size);
+	SAFE_CALL(cudaDeviceSynchronize(), "Error executing kernel");
    	printf("multMatrix <<<(%d,%d), (%d,%d)>>>\n", grid.x, grid.y, block.x, block.y);
 
    	double *h_z1;
-    h_z1 = (double *)malloc(hidden_layer_size * training_size * sizeof(double));
-    SAFE_CALL(cudaMemcpy(h_z1, d_z1, hidden_layer_size * training_size, cudaMemcpyDeviceToHost), "CUDA Memcpy Device To Host Failed");
+	h_z1 = (double *)malloc(hidden_layer_size * training_size * sizeof(double));
+	
+    SAFE_CALL(cudaMemcpy(h_z1, d_z1, hidden_layer_size * training_size * sizeof(double), cudaMemcpyDeviceToHost), "CUDA Memcpy Device To Host Failed");
 
     /*
     for (int i = 0; i <  hidden_layer_size * training_size; i++){
