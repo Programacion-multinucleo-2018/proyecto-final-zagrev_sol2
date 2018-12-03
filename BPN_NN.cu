@@ -1,5 +1,5 @@
 /*
- * File:   image_blurring.cu
+ * File:   BPN_NN.cu
  * Author: Cynthia Castillo
  * Student ID: A01374530
  *
@@ -25,18 +25,18 @@ __device__ double sigmoidalGradiente(double z) {
   return g_z * (1 - g_z);
 }
 
-__global__ void matrixMult(double *A, double *B, double *C, const int cols, const int rows, const int shared_dim)
+__global__ void matrixMult(double *A, double *B, double *C, const int C_rows, const int C_cols)
 {
     unsigned int ix_cols = threadIdx.x + blockIdx.x * blockDim.x;
     unsigned int iy_rows = threadIdx.y + blockIdx.y * blockDim.y;
-    unsigned int idx = iy_rows * cols + ix_cols;
+    unsigned int idx = iy_rows * C_rows + ix_cols;
 
-    if (ix_cols < cols && iy_rows < rows)
+    if (ix_cols < C_rows && iy_rows < C_cols)
     {
     	C[idx] = 0;
-    	for (int shared_dim = 0; shared_dim < cols; shared_dim++)
+    	for (int shared_dim = 0; shared_dim < C_rows; shared_dim++)
     		//dot product
-    		C[idx] += A[shared_dim * rows + ix_cols] * B[iy_rows * rows + shared_dim];  
+    		C[idx] += A[shared_dim * C_cols + ix_cols] * B[iy_rows * C_cols + shared_dim];  
 
     	C[idx] = sigmoidalGradiente(C[idx]);
     }
@@ -64,6 +64,8 @@ int main(int argc, char *argv[])
 
   	std::cout << "\nFile used: " << filePath <<  "\nNumber of examples: " << training_size << std::endl;
 
+
+  	int lineCounter = 0;
   	// FILE READER
     int counter = 0;
 	std::ifstream file(filePath);
@@ -80,6 +82,12 @@ int main(int argc, char *argv[])
 		std::istringstream split(line);
 		for (std::string each; std::getline(split, each, split_char); counter <= training_attr_size ? values_s.push_back(each) : labels_s.push_back(each))
 			counter++;
+
+		lineCounter++;
+	    //std::cout << "Counter: " << lineCounter << std::endl;
+
+	    if (lineCounter == training_size)
+	      break;
 	}
 
 	// TRANSFORM DATA TO DOUBLE
@@ -98,34 +106,40 @@ int main(int argc, char *argv[])
 
 	// GENERATE WEIGHTS
 	std::random_device rand_dev;
-    std::default_random_engine generator(rand_dev());
-  	std::uniform_real_distribution<double> distribution(-sigma, sigma);
+  	std::default_random_engine generator(rand_dev());
+	std::uniform_real_distribution<double> distribution(-sigma, sigma);
 
-  	std::vector<double> w1(hidden_layer_size * training_attr_size);
-  	std::vector<double> w2(output_layer_size * hidden_layer_size);
+	std::vector<double> w1;
+	std::vector<double> w2;
 
-  	//Initialize W1
-  	for(int i = 0; i < hidden_layer_size * training_attr_size; i++)
-  		w1.push_back(distribution(generator));
+	//Initialize W1
+	for(int i = 0; i < hidden_layer_size * training_attr_size; i++)
+		w1.push_back(distribution(generator));
 
-  	//Initialize W2
-  	for(int i = 0; i < output_layer_size * hidden_layer_size; i++)
-  		w2.push_back(distribution(generator));
+	//Initialize W2
+	for(int i = 0; i < output_layer_size * hidden_layer_size; i++)
+		w2.push_back(distribution(generator));
 
-  	std::shuffle(w1.begin(), w1.end(), generator);
-  	std::shuffle(w2.begin(), w2.end(), generator);
+	std::cout << "Size: " << values_s.size()/400 << std::endl;
+	std::cout << "Values: " << values.size()/400 << std::endl;
 
-  	//Filling bias
-  	//std::vector<double> b1(training_attr_size);
-  	//std::vector<double> b2(hidden_layer_size);
-  	//std::fill (b1.begin(), b1.end(), 1);
-  	//std::fill (b2.begin(), b2.end(), 1);
+	std::cout << "Size: " << output_layer_size * hidden_layer_size << std::endl;
+	std::cout << "W2: " << w2.size() << std::endl;
 
-  	//std::vector<double> z2(output_layer_size * training_size);
+	std::cout << "Size: " << hidden_layer_size * training_attr_size << std::endl;
+	std::cout << "W1: " << w1.size() << std::endl;
+
+	//Filling bias
+	//std::vector<double> b1(training_attr_size);
+	//std::vector<double> b2(hidden_layer_size);
+	//std::fill (b1.begin(), b1.end(), 1);
+	//std::fill (b2.begin(), b2.end(), 1);
+
+	//std::vector<double> z2(output_layer_size * training_size);
 
 	// Z2 will be the Results matrix
 	double *h_values, *h_labels, *h_w1, *h_w2, *h_z2;
-   	h_values = (double *)malloc(values.size() * sizeof(double));
+  	h_values = (double *)malloc(values.size() * sizeof(double));
 	h_labels = (double *)malloc(labels.size() * sizeof(double));
 	h_w1 = (double *)malloc(w1.size() * sizeof(double));
 	h_w2 = (double *)malloc(w2.size() * sizeof(double));
@@ -144,67 +158,49 @@ int main(int argc, char *argv[])
 
 	double *d_values, *d_labels, *d_w1, *d_w2, *d_z1, *d_z2, *d_b1, *d_b2;
 	SAFE_CALL(cudaMalloc((void **)&d_values, values.size() * sizeof(double)), "Error allocating d_values");
-    SAFE_CALL(cudaMalloc((void **)&d_labels, labels.size() * sizeof(double)), "Error allocating d_labels");
-    SAFE_CALL(cudaMalloc((void **)&d_w1, w1.size() * sizeof(double)), "Error allocating d_w1");
-    SAFE_CALL(cudaMalloc((void **)&d_w2, w2.size() * sizeof(double)), "Error allocating d_w2");
-    SAFE_CALL(cudaMalloc((void **)&d_z1, hidden_layer_size * training_size * sizeof(double)), "Error allocating d_z1");
-    SAFE_CALL(cudaMalloc((void **)&d_z2, output_layer_size * training_size * sizeof(double)), "Error allocating d_z2");
-    SAFE_CALL(cudaMalloc((void **)&d_b1, training_attr_size * sizeof(double)), "Error allocating d_b1");
-    SAFE_CALL(cudaMalloc((void **)&d_b2, hidden_layer_size * sizeof(double)), "Error allocating d_b2");
+	SAFE_CALL(cudaMalloc((void **)&d_labels, labels.size() * sizeof(double)), "Error allocating d_labels");
+	SAFE_CALL(cudaMalloc((void **)&d_w1, w1.size() * sizeof(double)), "Error allocating d_w1");
+	SAFE_CALL(cudaMalloc((void **)&d_w2, w2.size() * sizeof(double)), "Error allocating d_w2");
+	SAFE_CALL(cudaMalloc((void **)&d_z1, hidden_layer_size * training_size * sizeof(double)), "Error allocating d_z1");
+	SAFE_CALL(cudaMalloc((void **)&d_z2, output_layer_size * training_size * sizeof(double)), "Error allocating d_z2");
+	SAFE_CALL(cudaMalloc((void **)&d_b1, training_attr_size * sizeof(double)), "Error allocating d_b1");
+	SAFE_CALL(cudaMalloc((void **)&d_b2, hidden_layer_size * sizeof(double)), "Error allocating d_b2");
 
-    // transfer data from host to device
-    SAFE_CALL(cudaMemcpy(d_values, h_values, values.size() * sizeof(double), cudaMemcpyHostToDevice), "Error copying d_values");
-    SAFE_CALL(cudaMemcpy(d_labels, h_labels, labels.size() * sizeof(double), cudaMemcpyHostToDevice), "Error copying d_labels");
-    SAFE_CALL(cudaMemcpy(d_w1, h_w1, w1.size() * sizeof(double), cudaMemcpyHostToDevice), "Error copying d_w1");
-    SAFE_CALL(cudaMemcpy(d_w2, h_w2, w2.size() * sizeof(double), cudaMemcpyHostToDevice), "Error copying d_w2");
-    SAFE_CALL(cudaMemcpy(d_z2, h_z2, output_layer_size * training_size * sizeof(double), cudaMemcpyHostToDevice), "Error copying d_z2");
+	// transfer data from host to device
+	SAFE_CALL(cudaMemcpy(d_values, h_values, values.size() * sizeof(double), cudaMemcpyHostToDevice), "Error copying d_values");
+	SAFE_CALL(cudaMemcpy(d_labels, h_labels, labels.size() * sizeof(double), cudaMemcpyHostToDevice), "Error copying d_labels");
+	SAFE_CALL(cudaMemcpy(d_w1, h_w1, w1.size() * sizeof(double), cudaMemcpyHostToDevice), "Error copying d_w1");
+	SAFE_CALL(cudaMemcpy(d_w2, h_w2, w2.size() * sizeof(double), cudaMemcpyHostToDevice), "Error copying d_w2");
+	SAFE_CALL(cudaMemcpy(d_z2, h_z2, output_layer_size * training_size * sizeof(double), cudaMemcpyHostToDevice), "Error copying d_z2");
 
-	// show memory usage of GPU
-
-	size_t free_byte ;
-	size_t total_byte ;
-
-	cudaError cuda_status = cudaMemGetInfo( &free_byte, &total_byte ) ;
-
-	if ( cudaSuccess != cudaMemGetInfo( &free_byte, &total_byte ))
-	{
-		printf("Error: cudaMemGetInfo fails, %s \n", cudaGetErrorString(cuda_status) );
-		exit(1);
-	}
-
-	double free_db = (double)free_byte ;
-	double total_db = (double)total_byte ;
-	double used_db = total_db - free_db ;
-
-	printf("GPU memory usage: used = %f MB, free = %f MB, total = %f MB\n", used_db/1024.0/1024.0, free_db/1024.0/1024.0, total_db/1024.0/1024.0);
-
+    
 	// INVOKE KERNEL
-    int dimx = 32;
-    int dimy = 32;
-    dim3 block(dimx, dimy);
-    dim3 grid((training_attr_size + block.x - 1) / block.x, (training_size + block.y - 1) / block.y);
+	int dimx = 32;
+	int dimy = 32;
+	dim3 block(dimx, dimy);
+	dim3 grid((training_attr_size + block.x - 1) / block.x, (training_size + block.y - 1) / block.y);
 
-	matrixMult<<<grid, block>>>(d_w1, d_values, d_z1, hidden_layer_size, training_size, training_attr_size);
-	SAFE_CALL(cudaDeviceSynchronize(), "Error executing kernel");
-   	printf("multMatrix <<<(%d,%d), (%d,%d)>>>\n", grid.x, grid.y, block.x, block.y);
+ 	matrixMult<<<grid, block>>>(d_w1, d_values, d_z1, training_size, hidden_layer_size);
+ 	SAFE_CALL(cudaDeviceSynchronize(), "Error executing kernel");
+ 	printf("multMatrix <<<(%d,%d), (%d,%d)>>>\n", grid.x, grid.y, block.x, block.y);
+ 	// SAFE_CALL kernel error
+    SAFE_CALL(cudaGetLastError(), "Error with last error");
 
-   	double *h_z1;
+ 	double *h_z1;
 	h_z1 = (double *)malloc(hidden_layer_size * training_size * sizeof(double));
-	
-    SAFE_CALL(cudaMemcpy(h_z1, d_z1, hidden_layer_size * training_size * sizeof(double), cudaMemcpyDeviceToHost), "CUDA Memcpy Device To Host Failed");
+	SAFE_CALL(cudaMemcpy(h_z1, d_z1, hidden_layer_size * training_size * sizeof(double), cudaMemcpyDeviceToHost), "CUDA Memcpy Device To Host Failed");
+	/*
+	for (int i = 0; i <  hidden_layer_size * training_size; i++){
+		if (i%25 == 0)
+			std::cout << std::endl;
+	std::cout << h_z1[i] << " ";
+	}
+	std::cout << std::endl << std::endl;
+	*/
 
-    /*
-    for (int i = 0; i <  hidden_layer_size * training_size; i++){
-    	if (i%25 == 0)
-    		std::cout << std::endl;
-		std::cout << h_z1[i] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    */
+ 	//matrixMult<<<grid, block>>>(d_w2, d_z1, d_z2, output_layer_size, training_size, hidden_layer_size);
 
-   	//matrixMult<<<grid, block>>>(d_w2, d_z1, d_z2, output_layer_size, training_size, hidden_layer_size);
-
-   	//SAFE_CALL(cudaMemcpy(h_z2, d_z2, z2.size(), cudaMemcpyDeviceToHost), "CUDA Memcpy Device to host Failed");
+ 	//SAFE_CALL(cudaMemcpy(h_z2, d_z2, z2.size(), cudaMemcpyDeviceToHost), "CUDA Memcpy Device to host Failed");
 
 	return 0;	
 }
@@ -220,15 +216,15 @@ int main(int argc, char *argv[])
 
 
    	/*
-	std::cout << " ** W1 ** " << endl;
-	counter = 0;
-	for (auto i = w1.begin(); i != w1.end(); ++i){
+  std::cout << " ** W1 ** " << std::endl;
+  counter = 0;
+  for (auto i = w1.begin(); i != w1.end(); ++i){
     std::cout << *i << ' ';
-	counter++;
-	if (counter == 24)
-		std::cout << endl;
-	}
-	std::cout << endl << endl;
+  counter++;
+  if (counter == 24)
+    std::cout << std::endl;
+  }
+  std::cout << std::endl << std::endl;
 	
 	counter = 0;
 	std::cout << " ** Values ** " << endl;
