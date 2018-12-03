@@ -110,6 +110,8 @@ NN = Neural_Network(400, 25, 1)
 T = Trainer(NN)
 T.train(X[:4000],y[:4000])
 
+i = 4000
 for x in X[-1000:]:
     result = NN.forward(x)
-    print(result, y)
+    print(result, y[0])
+    i += 1
