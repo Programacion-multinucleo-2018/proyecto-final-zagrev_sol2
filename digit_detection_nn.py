@@ -113,5 +113,5 @@ T.train(X[:4000],y[:4000])
 i = 4000
 for x in X[-1000:]:
     result = NN.forward(x)
-    print(result, y[0])
+    print(result, y[i])
     i += 1
