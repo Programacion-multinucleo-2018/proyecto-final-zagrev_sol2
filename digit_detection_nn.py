@@ -1,6 +1,7 @@
 import numpy as np
 from scipy import optimize
 import random
+import time
 
 class Neural_Network(object):
     def __init__(self, input, hidden, output):
@@ -105,13 +106,17 @@ np.random.shuffle(indices)
 X = X[indices]
 y = y[indices]
 
+start_time = time.time()
 NN = Neural_Network(400, 25, 1)
 
 T = Trainer(NN)
 T.train(X[:4000],y[:4000])
+elapsed_time = time.time() - start_time
 
 i = 4000
 for x in X[-1000:]:
     result = NN.forward(x)
     print(result, y[i])
     i += 1
+
+print('Tiempo: ' + str(elapsed_time) + ' s')
